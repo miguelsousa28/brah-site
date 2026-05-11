@@ -1,6 +1,5 @@
 // Burger explosion — 60 scroll-driven frames.
-// Preloads all frames; uses ONE <img> and snaps src for a flash-free swap.
-// Minimal, on-brand overlay: one Caveat annotation per stage.
+// v3: canvas draw (zero flicker) + rAF lerp (smooth inertia).
 
 (function () {
   const stage = document.querySelector('.burger-sticky');
@@ -8,8 +7,10 @@
   if (!stage || !section) return;
 
   const TOTAL = 60;
-  const frameSrc = (i) => `video/frames/${String(i).padStart(2, '0')}.jpg`;
+  const LERP  = 0.09;
+  const src   = (i) => `video/frames/${String(i).padStart(2, '0')}.jpg`;
 
+  // remove original video / frames
   const oldVideo = document.getElementById('burger-video');
   if (oldVideo) oldVideo.remove();
   const oldFrames = stage.querySelector('.burger-frames');
@@ -19,7 +20,7 @@
 
   const overlay = stage.querySelector('.burger-overlay');
 
-  // editorial backdrop — just a faint ring + one rotating annotation per stage
+  // ── scene bg ──────────────────────────────────────────────
   const sceneBg = document.createElement('div');
   sceneBg.className = 'burger-scene-bg';
   sceneBg.innerHTML = `
@@ -41,76 +42,135 @@
         <path d="M5 35 Q 60 42, 120 18 L 132 14 M 120 18 L 125 28" stroke="#0E0E0E" stroke-width="1.5" fill="none" stroke-linecap="round"/>
       </svg>
       <span class="anno-text">crosta · caramelizada</span>
-    </div>
-  `;
+    </div>`;
   stage.insertBefore(sceneBg, overlay);
 
-  // single img, snap-swap. preload everything into the browser cache first.
+  // ── canvas — same visual position as original .burger-frames img ──
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = `
+    position: absolute;
+    top: 50%; left: 72%;
+    transform: translate(-50%, -50%);
+    width: auto; height: 84vh;
+    max-width: 55vw;
+    mix-blend-mode: multiply;
+    filter: drop-shadow(0 30px 30px rgba(0,0,0,0.18));
+    pointer-events: none;
+  `;
+  // on mobile: center + smaller (mirrors original media query)
+  function applyMobileStyle() {
+    if (window.innerWidth <= 900) {
+      canvas.style.left   = '50%';
+      canvas.style.height = '50vh';
+      canvas.style.maxWidth = '90vw';
+    } else {
+      canvas.style.left   = '72%';
+      canvas.style.height = '84vh';
+      canvas.style.maxWidth = '55vw';
+    }
+  }
+  applyMobileStyle();
+  window.addEventListener('resize', applyMobileStyle);
+
   const frameWrap = document.createElement('div');
   frameWrap.className = 'burger-frames';
-  const img = document.createElement('img');
-  img.alt = '';
-  img.decoding = 'sync';
-  img.classList.add('on');
-  frameWrap.appendChild(img);
+  frameWrap.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+  frameWrap.appendChild(canvas);
   stage.insertBefore(frameWrap, overlay);
 
-  const cache = new Array(TOTAL);
-  let loaded = 0;
+  const ctx = canvas.getContext('2d');
+
+  // ── preload all frames ─────────────────────────────────────
+  const frames = new Array(TOTAL);
+  let loadedCount = 0;
+  let firstDrawn = false;
+
+  function drawFrame(img) {
+    canvas.width  = img.naturalWidth  || img.width  || 800;
+    canvas.height = img.naturalHeight || img.height || 1000;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+  }
+
   for (let i = 0; i < TOTAL; i++) {
     const im = new Image();
-    im.onload = () => { loaded++; };
-    im.src = frameSrc(i);
-    cache[i] = im;
+    im.onload = () => {
+      loadedCount++;
+      if (!firstDrawn && i === 0) { drawFrame(im); firstDrawn = true; }
+    };
+    im.src = src(i);
+    frames[i] = im;
   }
-  img.src = frameSrc(0);
-  let currentIdx = 0;
 
-  function setFrame(idx) {
-    if (idx === currentIdx) return;
-    img.src = cache[idx].src;
-    currentIdx = idx;
-  }
+  // ── rAF lerp loop ──────────────────────────────────────────
+  let targetP  = 0;
+  let smoothP  = 0;
+  let drawnIdx = -1;
+  let rafId    = null;
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-  function updateScroll() {
-    const rect = section.getBoundingClientRect();
+  function getTarget() {
+    const rect  = section.getBoundingClientRect();
     const total = section.offsetHeight - window.innerHeight;
-    const scrolled = -rect.top;
-    const progress = clamp(scrolled / total, 0, 1);
+    return clamp(-rect.top / total, 0, 1);
+  }
 
-    const idx = Math.min(TOTAL - 1, Math.round(progress * (TOTAL - 1)));
-    setFrame(idx);
-
-    if (sceneBg) sceneBg.style.setProperty('--p', progress);
-
+  function updateUI(p) {
     const fill = document.querySelector('.burger-progress-fill');
-    if (fill) fill.style.width = (progress * 100) + '%';
+    if (fill) fill.style.width = (p * 100) + '%';
+    if (sceneBg) sceneBg.style.setProperty('--p', p);
 
-    const cap = document.querySelector('.burger-cap');
+    const cap   = document.querySelector('.burger-cap');
     const label = document.querySelector('.burger-stage-label');
-    if (cap && label) {
-      const lang = document.documentElement.getAttribute('data-lang') || 'pt';
-      let stageKey = '1';
-      if (progress >= 0.66) stageKey = '3';
-      else if (progress >= 0.33) stageKey = '2';
-      cap.dataset.stage = stageKey;
-      const labels = {
-        '1': lang === 'pt' ? '01 · a construção' : '01 · the build',
-        '2': lang === 'pt' ? '02 · a explosão' : '02 · the explosion',
-        '3': lang === 'pt' ? '03 · o smash' : '03 · the smash'
-      };
-      label.textContent = labels[stageKey];
-      cap.querySelectorAll('[data-stage-caption]').forEach(c => {
-        c.style.display = c.dataset.stageCaption === stageKey ? 'block' : 'none';
-      });
-      document.querySelectorAll('.burger-anno[data-anno-stage]').forEach(a => {
-        a.classList.toggle('on', a.dataset.annoStage === stageKey);
-      });
+    if (!cap || !label) return;
+
+    const lang = document.documentElement.getAttribute('data-lang') || 'pt';
+    const key  = p >= 0.66 ? '3' : p >= 0.33 ? '2' : '1';
+    if (cap.dataset.stage === key) return;
+
+    cap.dataset.stage = key;
+    const labels = {
+      '1': lang === 'pt' ? '01 · a construção' : '01 · the build',
+      '2': lang === 'pt' ? '02 · a explosão'   : '02 · the explosion',
+      '3': lang === 'pt' ? '03 · o smash'       : '03 · the smash'
+    };
+    label.textContent = labels[key];
+    cap.querySelectorAll('[data-stage-caption]').forEach(c => {
+      c.style.display = c.dataset.stageCaption === key ? 'block' : 'none';
+    });
+    document.querySelectorAll('.burger-anno[data-anno-stage]').forEach(a => {
+      a.classList.toggle('on', a.dataset.annoStage === key);
+    });
+  }
+
+  function tick() {
+    smoothP += (targetP - smoothP) * LERP;
+
+    const idx = clamp(Math.round(smoothP * (TOTAL - 1)), 0, TOTAL - 1);
+    if (idx !== drawnIdx && frames[idx] && frames[idx].complete) {
+      drawFrame(frames[idx]);
+      drawnIdx = idx;
+    }
+
+    updateUI(smoothP);
+
+    if (Math.abs(smoothP - targetP) > 0.0003) {
+      rafId = requestAnimationFrame(tick);
+    } else {
+      rafId = null;
     }
   }
-  window.addEventListener('scroll', updateScroll, { passive: true });
-  window.addEventListener('resize', updateScroll);
-  updateScroll();
+
+  function onScroll() {
+    targetP = getTarget();
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+
+  targetP  = getTarget();
+  smoothP  = targetP;
+  rafId    = requestAnimationFrame(tick);
 })();

@@ -195,10 +195,10 @@ function renderMenu() {
   if (!grid) return;
   const dict = I18N[currentLang];
   const imgMap = {
-    cheese: 'images/burger-cheese-hero.jpg',
-    classic: 'images/burger-classic-hero.jpg',
-    bacon: 'images/burger-bacon.jpg',
-    vegan: 'images/burger-vegan.jpg'
+    cheese: 'images/burger-cheese-new.jpg',
+    classic: 'images/burger-classic-new.jpg',
+    bacon: 'images/burger-bacon-new.jpg',
+    vegan: 'images/burger-vegan-new.jpg'
   };
   const badgeClass = {
     cheese: 'bestseller',
