@@ -289,7 +289,15 @@ body::before {
 .hero-float-3 { bottom: 12%; left: 8%; width: 130px; height: 160px; transform: rotate(4deg); }
 .hero-float-4 { bottom: 8%; right: 5%; width: 150px; height: 190px; transform: rotate(-5deg); }
 @media (max-width: 900px) {
-  .hero-float { display: none; }
+  .hero-float {
+    display: block;
+    width: 80px;
+    height: 100px;
+  }
+  .hero-float-1 { top: 8%;  left: 4%;  transform: rotate(-7deg); }
+  .hero-float-2 { top: 8%;  right: 4%; transform: rotate(5deg);  }
+  .hero-float-3 { bottom: 12%; left: 4%;  transform: rotate(4deg);  }
+  .hero-float-4 { bottom: 12%; right: 4%; transform: rotate(-5deg); }
 }
 
 /* scroll hint */
